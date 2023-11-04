@@ -1,6 +1,8 @@
 use std::any::type_name;
 use std::collections::HashMap;
 use std::fmt::{format, Debug};
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::str::{from_utf8, Utf8Error};
 use std::{mem::size_of, str::Bytes};
 
@@ -114,6 +116,7 @@ impl MemoryReader {
             Some(v) => v,
             None => buffer.len(),
         };
+
         let result = from_utf8(&buffer[0..i]);
 
         match result {
@@ -162,7 +165,7 @@ impl MemoryReader {
         let actor_id = u64::from(actor_id);
         let name_ptr = self
             .read_address::<u64>((self.g_name_start_address + actor_id / 0x4000 * 0x8) as usize)?;
-        let name = self.read_address::<u64>((name_ptr + 0x8 * actor_id % 0x4000) as usize)?;
+        let name = self.read_address::<u64>((name_ptr + 0x8 * (actor_id % 0x4000)) as usize)?;
         Ok(self.read_string((name + 0x10) as usize, 64))?
     }
 
@@ -259,7 +262,6 @@ impl SoTMemoryReader {
                     self.actor_name_map.insert(actor_id, new_actor_info);
                     self.actor_name_map.get(&actor_id).unwrap()
                 };
-                println!("{actor_info:?}");
             }
         }
 

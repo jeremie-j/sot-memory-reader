@@ -1,4 +1,6 @@
 use std::any::type_name;
+use std::collections::HashMap;
+use std::fmt::{format, Debug};
 use std::str::{from_utf8, Utf8Error};
 use std::{mem::size_of, str::Bytes};
 
@@ -15,6 +17,22 @@ const GNAMEPATTERN: &'static str = "48 8B 1D ? ? ? ? 48 85 DB 75 ? B9 08 04 00 0
 pub enum MemoryReaderError {
     MemoryReadingError(String),
     ByteToStringConversion,
+}
+
+struct ActorInfo {
+    id: u32,
+    raw_name: String,
+    base_address: usize,
+}
+
+impl Debug for ActorInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("")
+            .field(&self.id)
+            .field(&self.raw_name)
+            .field(&format(format_args!("{:#X}", self.base_address)))
+            .finish()
+    }
 }
 
 pub struct MemoryReader {
@@ -185,6 +203,7 @@ pub struct SoTMemoryReader {
     rm: MemoryReader,
     world_address: usize,
     u_level: usize,
+    actor_name_map: HashMap<u32, ActorInfo>,
 }
 
 impl SoTMemoryReader {
@@ -204,10 +223,11 @@ impl SoTMemoryReader {
             rm,
             world_address,
             u_level,
+            actor_name_map: HashMap::new(),
         })
     }
 
-    pub fn read_actors(&self) -> Result<(), MemoryReaderError> {
+    pub fn read_actors(&mut self) -> Result<(), MemoryReaderError> {
         let actor_base = self.rm.read_address::<u64>(self.u_level + 0xa0)?;
         let actor_array_size = self.rm.read_address::<u32>(self.u_level + 0xa0 + 8)? as usize;
 
@@ -222,17 +242,24 @@ impl SoTMemoryReader {
             let mut raw_actor_address = [0u8; 8];
             raw_actor_address.copy_from_slice(slice);
             let actor_address = usize::from_le_bytes(raw_actor_address);
-            println!("Actor address: {:#X}", actor_address);
 
             if let Ok(actor_id) = self.rm.read_address::<u32>(actor_address + 0x18) {
-                println!("Actor id: {}", actor_id);
-                let name = match self.rm.read_gname(actor_id) {
-                    Ok(v) => v,
-                    Err(_) => continue,
+                let actor_info = if let Some(actor) = self.actor_name_map.get(&actor_id) {
+                    actor
+                } else {
+                    let name = match self.rm.read_gname(actor_id) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    let new_actor_info = ActorInfo {
+                        id: actor_id,
+                        raw_name: name,
+                        base_address: actor_address,
+                    };
+                    self.actor_name_map.insert(actor_id, new_actor_info);
+                    self.actor_name_map.get(&actor_id).unwrap()
                 };
-                println!("{} at {:#X}", name, actor_address)
-            } else {
-                continue;
+                println!("{actor_info:?}");
             }
         }
 

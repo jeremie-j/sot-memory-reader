@@ -85,24 +85,18 @@ impl MemoryReader {
     }
 
     pub fn read_string(&self, address: usize, size: usize) -> Result<String, MemoryReaderError> {
-        let mut target_buffer: Vec<u8> = vec![];
-        read::<Vec<u8>>(
-            &self.process.handle,
-            address,
-            size,
-            &mut target_buffer as *mut Vec<u8>,
-        )
-        .map_err(|err| {
+        let buffer = self.read_bytes(address, size).map_err(|err| {
             MemoryReaderError::MemoryReadingError(format!(
                 "Could not read string at {:#X}",
                 address
             ))
         })?;
-        let i = match target_buffer.iter().position(|r| r == &b'\x00') {
+
+        let i = match buffer.iter().position(|r| r == &b'\x00') {
             Some(v) => v,
-            None => target_buffer.len(),
+            None => buffer.len(),
         };
-        let result = from_utf8(&target_buffer[0..i]);
+        let result = from_utf8(&buffer[0..i]);
 
         match result {
             Ok(v) => Ok(String::from(v)),
@@ -173,17 +167,17 @@ impl MemoryReader {
     }
 
     pub fn read_bytes(&self, address: usize, size: usize) -> Result<Vec<u8>, MemoryReaderError> {
-        let mut target_buffer: Vec<u8> = vec![];
-        read::<Vec<u8>>(
+        let mut target_buffer: Vec<u8> = vec![0; size];
+        read::<u8>(
             &self.process.handle,
             address,
             size,
-            &mut target_buffer as *mut Vec<u8>,
+            target_buffer.as_mut_ptr(),
         )
         .map_err(|err| {
             MemoryReaderError::MemoryReadingError(format!("Could not read bytes at {:#X}", address))
         })?;
-        Ok((target_buffer))
+        Ok(target_buffer)
     }
 }
 
@@ -228,14 +222,17 @@ impl SoTMemoryReader {
             let mut raw_actor_address = [0u8; 8];
             raw_actor_address.copy_from_slice(slice);
             let actor_address = usize::from_le_bytes(raw_actor_address);
+            println!("Actor address: {:#X}", actor_address);
 
-            let actor_id = self.rm.read_address::<u32>(actor_address + 0x18)?;
-            if actor_id != 0 {
+            if let Ok(actor_id) = self.rm.read_address::<u32>(actor_address + 0x18) {
+                println!("Actor id: {}", actor_id);
                 let name = match self.rm.read_gname(actor_id) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };
                 println!("{} at {:#X}", name, actor_address)
+            } else {
+                continue;
             }
         }
 

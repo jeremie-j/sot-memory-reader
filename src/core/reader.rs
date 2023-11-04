@@ -12,7 +12,7 @@ const UWORLDPATTERN: &'static str = "48 8B 05 ? ? ? ? 48 8B 88 ? ? ? ? 48 85 C9 
 const GOBJECTPATTERN: &'static str = "89 0D ? ? ? ? 48 8B DF 48 89 5C 24";
 const GNAMEPATTERN: &'static str = "48 8B 1D ? ? ? ? 48 85 DB 75 ? B9 08 04 00 00";
 
-pub enum MemoryErrors {
+pub enum MemoryReaderError {
     MemoryReadingError(String),
     ByteToStringConversion,
 }
@@ -23,7 +23,7 @@ pub struct MemoryReader {
     u_world_base: usize,
     g_object_base: usize,
     g_name_base: usize,
-    g_name_start_address: u8,
+    g_name_start_address: u64,
 }
 
 impl MemoryReader {
@@ -44,19 +44,19 @@ impl MemoryReader {
         let mut g_name_offset: u32 = 0;
         read::<u32>(
             &process.handle,
-            module.base_address + g_name_base + 7 as usize,
+            module.base_address + g_name_base + 3 as usize,
             size_of::<u32>(),
             &mut g_name_offset as *mut u32,
         )
         .expect("Could not get g_name_offset offset");
 
         let g_name_ptr: usize = module.base_address + g_name_base + (g_name_offset + 7) as usize;
-        let mut g_name_start_address: u8 = 0;
-        read::<u8>(
+        let mut g_name_start_address: u64 = 0;
+        read::<u64>(
             &process.handle,
             g_name_ptr,
-            size_of::<u8>(),
-            &mut g_name_start_address as *mut u8,
+            size_of::<u64>(),
+            &mut g_name_start_address as *mut u64,
         )
         .expect("Could not get g_name_start_address offset");
 
@@ -80,11 +80,11 @@ impl MemoryReader {
         false
     }
 
-    pub fn read_string_default_size(&self, address: usize) -> Result<String, MemoryErrors> {
+    pub fn read_string_default_size(&self, address: usize) -> Result<String, MemoryReaderError> {
         self.read_string(address, 50)
     }
 
-    pub fn read_string(&self, address: usize, size: usize) -> Result<String, MemoryErrors> {
+    pub fn read_string(&self, address: usize, size: usize) -> Result<String, MemoryReaderError> {
         let mut target_buffer: Vec<u8> = vec![];
         read::<Vec<u8>>(
             &self.process.handle,
@@ -93,7 +93,10 @@ impl MemoryReader {
             &mut target_buffer as *mut Vec<u8>,
         )
         .map_err(|err| {
-            MemoryErrors::MemoryReadingError(format!("Could not read string at {:#X}", address))
+            MemoryReaderError::MemoryReadingError(format!(
+                "Could not read string at {:#X}",
+                address
+            ))
         })?;
         let i = match target_buffer.iter().position(|r| r == &b'\x00') {
             Some(v) => v,
@@ -107,7 +110,11 @@ impl MemoryReader {
         }
     }
 
-    pub fn read_name_string(&self, address: usize, size: usize) -> Result<String, MemoryErrors> {
+    pub fn read_name_string(
+        &self,
+        address: usize,
+        size: usize,
+    ) -> Result<String, MemoryReaderError> {
         let mut target_buffer: Vec<u8> = vec![];
         read::<Vec<u8>>(
             &self.process.handle,
@@ -116,13 +123,16 @@ impl MemoryReader {
             &mut target_buffer as *mut Vec<u8>,
         )
         .map_err(|err| {
-            MemoryErrors::MemoryReadingError(format!("Could not read string at {:#X}", address))
+            MemoryReaderError::MemoryReadingError(format!(
+                "Could not read string at {:#X}",
+                address
+            ))
         })?;
 
         let i = target_buffer
             .windows(3)
             .position(|window| window == b"\x00\x00\x00")
-            .ok_or(MemoryErrors::ByteToStringConversion)?;
+            .ok_or(MemoryReaderError::ByteToStringConversion)?;
 
         let u16_buffer: Vec<u16> = target_buffer[0..i]
             .chunks_exact(2)
@@ -132,87 +142,103 @@ impl MemoryReader {
 
         match String::from_utf16(&u16_buffer) {
             Ok(v) => Ok(v),
-            Err(_) => Err(MemoryErrors::ByteToStringConversion),
+            Err(_) => Err(MemoryReaderError::ByteToStringConversion),
         }
     }
 
-    pub fn read_gname(&self, actor_id: u8) -> Result<String, MemoryErrors> {
-        let actor_id: u32 = u32::from(actor_id);
-        let g_name_start_address = u32::from(self.g_name_start_address);
-        let name_ptr: u32 = self
-            .read_ptr((g_name_start_address + actor_id / 0x4000 * 0x8) as usize)?
-            .into();
-        let name = self.read_ptr((name_ptr + 0x8 * actor_id % 0x4000) as usize)?;
+    pub fn read_gname(&self, actor_id: u32) -> Result<String, MemoryReaderError> {
+        let actor_id = u64::from(actor_id);
+        let name_ptr = self
+            .read_address::<u64>((self.g_name_start_address + actor_id / 0x4000 * 0x8) as usize)?;
+        let name = self.read_address::<u64>((name_ptr + 0x8 * actor_id % 0x4000) as usize)?;
         Ok(self.read_string((name + 0x10) as usize, 64))?
     }
 
-    pub fn read_ptr(&self, address: usize) -> Result<u8, MemoryErrors> {
-        let mut target_buffer: u8 = 0;
-        read::<u8>(
-            &self.process.handle,
-            address,
-            size_of::<u8>(),
-            &mut target_buffer as *mut u8,
-        )
-        .map_err(|err| {
-            MemoryErrors::MemoryReadingError(format!("Could not read pointer at {:#X}", address))
-        })?;
-        Ok(target_buffer)
-    }
-
-    pub fn read_actors(&self){
-        let u_world_offset: u8 = 0;
-        read(&self.process.handle, )
-        
-        
-        .read_ulong(
-            base_address + self.rm.u_world_base + 3
-        )
-        u_world = base_address + self.rm.u_world_base + u_world_offset + 7
-        self.world_address = self.rm.read_ptr(u_world)
-
-
-        let actor_base_address = read<u8>(
-            &self.process.handle,
-            self.u_world_base
-        )
-        let actors_length = 
-
-
-        // actor_raw = self.rm.read_bytes(self.u_level + 0xa0, 0xC)
-        // actor_data = struct.unpack("<Qi", actor_raw)
-
-        // raw_name = ""
-        // actor_address = self.rm.read_ptr(actor_data[0] + (x * 0x8))
-        // actor_id = self.rm.read_int(
-        //     actor_address + OFFSETS.get('Actor.actorId')
-        // )
-
-        // # We save a mapping of actor id to actor name for the sake of
-        // # saving memory calls
-        // if actor_id not in self.actor_name_map and actor_id != 0:
-        //     try:
-        //         raw_name = self.rm.read_gname(actor_id)
-        //         self.actor_name_map[actor_id] = raw_name
-        //     except Exception as e:
-        //         logger.error(f"Unable to find actor name: {e}")
-        // elif actor_id in self.actor_name_map:
-        //     raw_name = self.actor_name_map.get(actor_id)
-            
-
-        // actor_raw = self.rm.read_bytes(self.u_level + 0xa0, 0xC)
-        // actor_data = struct.unpack("<Qi", actor_raw)
-    }
-
-
-    pub fn read_address<T>(&self, address: usize) -> Result<T, MemoryErrors> {
-        let mut target_buffer: T;
+    pub fn read_address<T: Default>(&self, address: usize) -> Result<T, MemoryReaderError> {
+        let mut target_buffer = T::default();
         read::<T>(
             &self.process.handle,
             address,
             size_of::<T>(),
-            &mut target_buffer as *mut T
-        ).map_err(|err| MemoryErrors::MemoryReadingError(format!("Could not read {} type at {:#X}", type_name::<T>(), address)))?;
+            &mut target_buffer as *mut T,
+        )
+        .map_err(|err| {
+            MemoryReaderError::MemoryReadingError(format!(
+                "Could not read {} type at {:#X}",
+                type_name::<T>(),
+                address
+            ))
+        })?;
         Ok(target_buffer)
+    }
+
+    pub fn read_bytes(&self, address: usize, size: usize) -> Result<Vec<u8>, MemoryReaderError> {
+        let mut target_buffer: Vec<u8> = vec![];
+        read::<Vec<u8>>(
+            &self.process.handle,
+            address,
+            size,
+            &mut target_buffer as *mut Vec<u8>,
+        )
+        .map_err(|err| {
+            MemoryReaderError::MemoryReadingError(format!("Could not read bytes at {:#X}", address))
+        })?;
+        Ok((target_buffer))
+    }
+}
+
+pub struct SoTMemoryReader {
+    rm: MemoryReader,
+    world_address: usize,
+    u_level: usize,
+}
+
+impl SoTMemoryReader {
+    pub fn new(rm: MemoryReader) -> Result<Self, MemoryReaderError> {
+        let base_address = rm.module.base_address;
+
+        let u_world_offset = rm.read_address::<u32>(base_address + rm.u_world_base + 3)? as usize;
+        let u_world_ptr = base_address + rm.u_world_base + u_world_offset + 7;
+        let world_address = rm.read_address::<u64>(u_world_ptr)? as usize;
+        let g_objects_offset =
+            rm.read_address::<u64>(base_address + rm.g_object_base + 2)? as usize;
+        let g_objects_address = base_address + rm.g_object_base + g_objects_offset + 22;
+
+        let u_level = rm.read_address::<u64>(world_address + 0x30)? as usize;
+
+        Ok(Self {
+            rm,
+            world_address,
+            u_level,
+        })
+    }
+
+    pub fn read_actors(&self) -> Result<(), MemoryReaderError> {
+        let actor_base = self.rm.read_address::<u64>(self.u_level + 0xa0)?;
+        let actor_array_size = self.rm.read_address::<u32>(self.u_level + 0xa0 + 8)? as usize;
+
+        // Credit @mogistink https://www.unknowncheats.me/forum/members/3434160.html
+        let level_actors_raw: Vec<u8> = self
+            .rm
+            .read_bytes(actor_base as usize, actor_array_size as usize * 8)?;
+
+        for i in 0..actor_array_size {
+            let slice = &level_actors_raw[(i * 8)..(i * 8 + 8)];
+
+            let mut raw_actor_address = [0u8; 8];
+            raw_actor_address.copy_from_slice(slice);
+            let actor_address = usize::from_le_bytes(raw_actor_address);
+
+            let actor_id = self.rm.read_address::<u32>(actor_address + 0x18)?;
+            if actor_id != 0 {
+                let name = match self.rm.read_gname(actor_id) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                println!("{} at {:#X}", name, actor_address)
+            }
+        }
+
+        Ok(())
     }
 }

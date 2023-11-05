@@ -205,7 +205,6 @@ impl MemoryReader {
 pub struct SoTMemoryReader {
     rm: MemoryReader,
     world_address: usize,
-    u_level: usize,
     actor_name_map: HashMap<u32, ActorInfo>,
 }
 
@@ -220,48 +219,52 @@ impl SoTMemoryReader {
             rm.read_address::<u64>(base_address + rm.g_object_base + 2)? as usize;
         let g_objects_address = base_address + rm.g_object_base + g_objects_offset + 22;
 
-        let u_level = rm.read_address::<u64>(world_address + 0x30)? as usize;
-
         Ok(Self {
             rm,
             world_address,
-            u_level,
             actor_name_map: HashMap::new(),
         })
     }
 
     pub fn read_actors(&mut self) -> Result<(), MemoryReaderError> {
-        let actor_base = self.rm.read_address::<u64>(self.u_level + 0xa0)?;
-        let actor_array_size = self.rm.read_address::<u32>(self.u_level + 0xa0 + 8)? as usize;
+        // TArray<ULONG_PTR> levels = Read<TArray<ULONG_PTR>>((LPBYTE)_this + 0x150);
+        let levels_base = self.rm.read_address::<u64>(self.world_address + 0xa0)? as usize;
+        let levels_counts = self.rm.read_address::<u32>(self.world_address + 0xa0 + 8)? as usize;
 
-        // Credit @mogistink https://www.unknowncheats.me/forum/members/3434160.html
-        let level_actors_raw: Vec<u8> = self
-            .rm
-            .read_bytes(actor_base as usize, actor_array_size as usize * 8)?;
+        for i in 0..levels_counts {
+            let lvl_ptr = self.rm.read_address::<u64>(levels_base + (i * 8))? as usize;
+            let actor_base = self.rm.read_address::<u64>(lvl_ptr + 0xa0)? as usize;
+            let actor_array_size = self.rm.read_address::<u32>(lvl_ptr + 0xa0 + 8)? as usize;
 
-        for i in 0..actor_array_size {
-            let slice = &level_actors_raw[(i * 8)..(i * 8 + 8)];
+            // Credit @mogistink https://www.unknowncheats.me/forum/members/3434160.html
+            let level_actors_raw: Vec<u8> = self
+                .rm
+                .read_bytes(actor_base as usize, actor_array_size as usize * 8)?;
 
-            let mut raw_actor_address = [0u8; 8];
-            raw_actor_address.copy_from_slice(slice);
-            let actor_address = usize::from_le_bytes(raw_actor_address);
+            for j in 0..actor_array_size {
+                let slice = &level_actors_raw[(j * 8)..(j * 8 + 8)];
 
-            if let Ok(actor_id) = self.rm.read_address::<u32>(actor_address + 0x18) {
-                let actor_info = if let Some(actor) = self.actor_name_map.get(&actor_id) {
-                    actor
-                } else {
-                    let name = match self.rm.read_gname(actor_id) {
-                        Ok(v) => v,
-                        Err(_) => continue,
+                let mut raw_actor_address = [0u8; 8];
+                raw_actor_address.copy_from_slice(slice);
+                let actor_address = usize::from_le_bytes(raw_actor_address);
+
+                if let Ok(actor_id) = self.rm.read_address::<u32>(actor_address + 0x18) {
+                    let actor_info = if let Some(actor) = self.actor_name_map.get(&actor_id) {
+                        actor
+                    } else {
+                        let name = match self.rm.read_gname(actor_id) {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
+                        let new_actor_info = ActorInfo {
+                            id: actor_id,
+                            raw_name: name,
+                            base_address: actor_address,
+                        };
+                        self.actor_name_map.insert(actor_id, new_actor_info);
+                        self.actor_name_map.get(&actor_id).unwrap()
                     };
-                    let new_actor_info = ActorInfo {
-                        id: actor_id,
-                        raw_name: name,
-                        base_address: actor_address,
-                    };
-                    self.actor_name_map.insert(actor_id, new_actor_info);
-                    self.actor_name_map.get(&actor_id).unwrap()
-                };
+                }
             }
         }
 

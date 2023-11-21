@@ -1,16 +1,14 @@
 use std::any::type_name;
 use std::collections::HashMap;
-use std::fmt::{format, Debug};
-use std::fs::{File, OpenOptions};
-use std::io::Write;
-use std::str::{from_utf8, Utf8Error};
-use std::{mem::size_of, str::Bytes};
+use std::fmt::Debug;
+use std::mem::size_of;
+use std::str::from_utf8;
 
 use toy_arms::external::module::Module;
 use toy_arms::external::process::Process;
 use toy_arms::external::read;
 
-use sysinfo::{Pid, PidExt, ProcessExt, System, SystemExt};
+use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
 const UWORLDPATTERN: &'static str = "48 8B 05 ? ? ? ? 48 8B 88 ? ? ? ? 48 85 C9 74 06 48 8B 49 70";
 const GOBJECTPATTERN: &'static str = "89 0D ? ? ? ? 48 8B DF 48 89 5C 24";
@@ -23,20 +21,11 @@ pub enum MemoryReaderError {
     ByteToStringConversion,
 }
 
+#[derive(Debug, Clone)]
 pub struct ActorInfo {
-    id: u32,
-    raw_name: String,
-    base_address: usize,
-}
-
-impl Debug for ActorInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("")
-            .field(&self.id)
-            .field(&self.raw_name)
-            .field(&format(format_args!("{:#X}", self.base_address)))
-            .finish()
-    }
+    pub id: u32,
+    pub raw_name: String,
+    pub base_address: usize,
 }
 
 pub struct MemoryReader {
@@ -103,7 +92,7 @@ impl MemoryReader {
     }
 
     pub fn read_string_default_size(&self, address: usize) -> Result<String, MemoryReaderError> {
-        self.read_string(address, 50)
+        self.read_string(address, 124)
     }
 
     pub fn read_string(&self, address: usize, size: usize) -> Result<String, MemoryReaderError> {
@@ -207,7 +196,6 @@ impl MemoryReader {
 pub struct SoTMemoryReader {
     pub rm: MemoryReader,
     world_address: usize,
-    pub actor_name_map: HashMap<u32, ActorInfo>,
 }
 
 impl SoTMemoryReader {
@@ -223,14 +211,13 @@ impl SoTMemoryReader {
             rm.read_address::<u64>(base_address + rm.g_object_base + 2)? as usize;
         let _g_objects_address = base_address + rm.g_object_base + _g_objects_offset + 22;
 
-        Ok(Self {
-            rm,
-            world_address,
-            actor_name_map: HashMap::new(),
-        })
+        Ok(Self { rm, world_address })
     }
 
-    pub fn read_actors(&mut self) -> Result<(), MemoryReaderError> {
+    pub fn read_actors(
+        &mut self,
+        actor_name_map: &mut HashMap<u32, ActorInfo>,
+    ) -> Result<(), MemoryReaderError> {
         // TArray<ULONG_PTR> levels = Read<TArray<ULONG_PTR>>((LPBYTE)_this + 0x150);
         let levels_base = self.rm.read_address::<u64>(self.world_address + 0xa0)? as usize;
         let levels_counts = self.rm.read_address::<u32>(self.world_address + 0xa0 + 8)? as usize;
@@ -253,7 +240,7 @@ impl SoTMemoryReader {
                 let actor_address = usize::from_le_bytes(raw_actor_address);
 
                 if let Ok(actor_id) = self.rm.read_address::<u32>(actor_address + 0x18) {
-                    let actor_info = if let Some(actor) = self.actor_name_map.get(&actor_id) {
+                    let actor_info = if let Some(actor) = actor_name_map.get(&actor_id) {
                         actor
                     } else {
                         let name = match self.rm.read_gname(actor_id) {
@@ -265,8 +252,8 @@ impl SoTMemoryReader {
                             raw_name: name,
                             base_address: actor_address,
                         };
-                        self.actor_name_map.insert(actor_id, new_actor_info);
-                        self.actor_name_map.get(&actor_id).unwrap()
+                        actor_name_map.insert(actor_id, new_actor_info);
+                        actor_name_map.get(&actor_id).unwrap()
                     };
                 }
             }

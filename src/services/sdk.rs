@@ -56,7 +56,7 @@ impl SdkService {
         }
     }
 
-    pub fn scan_sdk(&mut self) {
+    pub async fn scan_sdk(&mut self) {
         let sdk_path = option_env!("SDK_PATH").unwrap_or("./JSON-SDK");
         let paths = fs::read_dir(sdk_path).unwrap();
         for path in paths {

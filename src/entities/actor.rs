@@ -6,5 +6,7 @@ pub struct Actor {
 }
 
 impl Actor {
-    fn get_coordinates() {}
+    fn get_coordinates() {
+        
+    }
 }

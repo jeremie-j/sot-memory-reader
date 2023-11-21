@@ -16,12 +16,14 @@ const UWORLDPATTERN: &'static str = "48 8B 05 ? ? ? ? 48 8B 88 ? ? ? ? 48 85 C9 
 const GOBJECTPATTERN: &'static str = "89 0D ? ? ? ? 48 8B DF 48 89 5C 24";
 const GNAMEPATTERN: &'static str = "48 8B 1D ? ? ? ? 48 85 DB 75 ? B9 08 04 00 00";
 
+#[derive(Debug)]
 pub enum MemoryReaderError {
+    InitializationError(String),
     MemoryReadingError(String),
     ByteToStringConversion,
 }
 
-struct ActorInfo {
+pub struct ActorInfo {
     id: u32,
     raw_name: String,
     base_address: usize,
@@ -195,7 +197,7 @@ impl MemoryReader {
             size,
             target_buffer.as_mut_ptr(),
         )
-        .map_err(|err| {
+        .map_err(|_err| {
             MemoryReaderError::MemoryReadingError(format!("Could not read bytes at {:#X}", address))
         })?;
         Ok(target_buffer)
@@ -203,21 +205,23 @@ impl MemoryReader {
 }
 
 pub struct SoTMemoryReader {
-    rm: MemoryReader,
+    pub rm: MemoryReader,
     world_address: usize,
-    actor_name_map: HashMap<u32, ActorInfo>,
+    pub actor_name_map: HashMap<u32, ActorInfo>,
 }
 
 impl SoTMemoryReader {
-    pub fn new(rm: MemoryReader) -> Result<Self, MemoryReaderError> {
+    pub fn new(process_name: &'static str) -> Result<Self, MemoryReaderError> {
+        let rm = MemoryReader::new(process_name)
+            .map_err(|_err| MemoryReaderError::InitializationError(String::from(_err)))?;
         let base_address = rm.module.base_address;
 
         let u_world_offset = rm.read_address::<u32>(base_address + rm.u_world_base + 3)? as usize;
         let u_world_ptr = base_address + rm.u_world_base + u_world_offset + 7;
         let world_address = rm.read_address::<u64>(u_world_ptr)? as usize;
-        let g_objects_offset =
+        let _g_objects_offset =
             rm.read_address::<u64>(base_address + rm.g_object_base + 2)? as usize;
-        let g_objects_address = base_address + rm.g_object_base + g_objects_offset + 22;
+        let _g_objects_address = base_address + rm.g_object_base + _g_objects_offset + 22;
 
         Ok(Self {
             rm,
@@ -267,7 +271,6 @@ impl SoTMemoryReader {
                 }
             }
         }
-
         Ok(())
     }
 }

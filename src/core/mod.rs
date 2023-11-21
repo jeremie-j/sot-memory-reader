@@ -1,3 +1,1 @@
-mod reader;
-
-pub use reader::{MemoryReader, SoTMemoryReader};
+pub mod reader;

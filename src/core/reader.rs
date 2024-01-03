@@ -164,6 +164,7 @@ impl MemoryReader {
     }
 
     pub fn read_pointer<T>(&self, address: *mut T) -> Result<T, MemoryReaderError> {
+        // TODO: rename
         let mut buffer: T = unsafe { std::mem::zeroed() };
         let mut bytes_read = 0;
         read::<T>(
@@ -230,47 +231,35 @@ impl SoTMemoryReader {
         count_bytes.copy_from_slice(&buffer[8..12]);
         let count: u32 = u32::from_le_bytes(count_bytes);
 
-        TArray {
-            ptr: base_address as *mut T,
-            count: count,
-        }
+        let item_size = size_of::<T>();
+        let raw_bytes = self
+            .rm
+            .read_bytes(base_address as usize, item_size * count as usize)
+            .unwrap();
+
+        TArray::new(raw_bytes, count)
     }
 
     pub fn read_actors(
         &mut self,
         actor_name_map: &mut HashMap<u32, ActorInfo>,
     ) -> Result<(), MemoryReaderError> {
-        let levels = self.read_array::<*mut u64>((self.world_address + 0x150) as usize);
+        let levels_pointer_table =
+            self.read_array::<*mut c_void>((self.world_address + 0x150) as usize);
 
-        for level_ptr in levels.iter() {
-            let level_base_address = self.rm.read_pointer(*level_ptr).unwrap();
+        for level_base_address in levels_pointer_table.iter() {
+            let actors_pointer_table =
+                self.read_array::<*mut c_void>(level_base_address as usize + 0xa0);
 
-            let actors = self.read_array::<*mut c_void>((level_base_address as usize + 0xa0));
-            let first_actor = actors.iter().next();
-            let actor_base: *mut c_void;
-
-            if first_actor.is_none() {
+            if actors_pointer_table.count == 0 {
                 println!("This level has no actors");
                 continue;
-            } else {
-                actor_base = *first_actor.unwrap();
             }
 
-            // Credit @mogistink https://www.unknowncheats.me/forum/members/3434160.html
-            let level_actors_raw: Vec<u8> = self
-                .rm
-                .read_bytes(actor_base as usize, actors.count as usize * 8)?;
-
-            for (index, actor) in actors.iter().enumerate() {
-                let slice = &level_actors_raw[(index * 8)..(index * 8 + 8)];
-
-                let mut raw_actor_address = [0u8; 8];
-                raw_actor_address.copy_from_slice(slice);
-                let actor_address = usize::from_le_bytes(raw_actor_address);
-
+            for actor_base_address in actors_pointer_table.iter() {
                 if let Ok(actor_id) = self
                     .rm
-                    .read_pointer::<u32>((actor_address + 0x18) as *mut u32)
+                    .read_pointer::<u32>((actor_base_address as usize + 0x18) as *mut u32)
                 {
                     let actor_info = if let Some(actor) = actor_name_map.get(&actor_id) {
                         actor
@@ -282,7 +271,7 @@ impl SoTMemoryReader {
                         let new_actor_info = ActorInfo {
                             id: actor_id,
                             raw_name: name,
-                            base_address: actor_address,
+                            base_address: actor_base_address as usize,
                         };
                         actor_name_map.insert(actor_id, new_actor_info);
                         actor_name_map.get(&actor_id).unwrap()

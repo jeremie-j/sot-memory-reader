@@ -1,6 +1,7 @@
 mod core;
 mod entities;
 mod services;
+mod structs;
 
 use ggez::{event, ContextBuilder};
 use services::event_loop as my_event_loop;

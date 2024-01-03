@@ -1,14 +1,17 @@
-use std::any::type_name;
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::fmt::Debug;
 use std::mem::size_of;
 use std::str::from_utf8;
+use std::{any::type_name, ptr};
 
 use toy_arms::external::module::Module;
 use toy_arms::external::process::Process;
 use toy_arms::external::read;
 
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+
+use crate::structs::tarray::TArray;
 
 const UWORLDPATTERN: &'static str = "48 8B 05 ? ? ? ? 48 8B 88 ? ? ? ? 48 85 C9 74 06 48 8B 49 70";
 const GOBJECTPATTERN: &'static str = "89 0D ? ? ? ? 48 8B DF 48 89 5C 24";
@@ -55,13 +58,13 @@ impl MemoryReader {
         let mut g_name_offset: u32 = 0;
         read::<u32>(
             &process.handle,
-            module.base_address + g_name_base + 3 as usize,
+            module.base_address + g_name_base + 3,
             size_of::<u32>(),
             &mut g_name_offset as *mut u32,
         )
         .expect("Could not get g_name_offset offset");
 
-        let g_name_ptr: usize = module.base_address + g_name_base + (g_name_offset + 7) as usize;
+        let g_name_ptr: usize = module.base_address + g_name_base + (g_name_offset as usize + 7);
         let mut g_name_start_address: u64 = 0;
         read::<u64>(
             &process.handle,
@@ -154,28 +157,29 @@ impl MemoryReader {
 
     pub fn read_gname(&self, actor_id: u32) -> Result<String, MemoryReaderError> {
         let actor_id = u64::from(actor_id);
-        let name_ptr = self
-            .read_address::<u64>((self.g_name_start_address + actor_id / 0x4000 * 0x8) as usize)?;
-        let name = self.read_address::<u64>((name_ptr + 0x8 * (actor_id % 0x4000)) as usize)?;
+        let name_ptr =
+            self.read_pointer((self.g_name_start_address + actor_id / 0x4000 * 0x8) as *mut u64)?;
+        let name = self.read_pointer((name_ptr + 0x8 * (actor_id % 0x4000)) as *mut u64)?;
         Ok(self.read_string((name + 0x10) as usize, 64))?
     }
 
-    pub fn read_address<T: Default>(&self, address: usize) -> Result<T, MemoryReaderError> {
-        let mut target_buffer = T::default();
+    pub fn read_pointer<T>(&self, address: *mut T) -> Result<T, MemoryReaderError> {
+        let mut buffer: T = unsafe { std::mem::zeroed() };
+        let mut bytes_read = 0;
         read::<T>(
             &self.process.handle,
-            address,
+            address as usize,
             size_of::<T>(),
-            &mut target_buffer as *mut T,
+            &mut buffer as *mut T as _,
         )
         .map_err(|err| {
             MemoryReaderError::MemoryReadingError(format!(
                 "Could not read {} type at {:#X}",
                 type_name::<T>(),
-                address
+                address as usize
             ))
         })?;
-        Ok(target_buffer)
+        Ok(buffer)
     }
 
     pub fn read_bytes(&self, address: usize, size: usize) -> Result<Vec<u8>, MemoryReaderError> {
@@ -204,42 +208,70 @@ impl SoTMemoryReader {
             .map_err(|_err| MemoryReaderError::InitializationError(String::from(_err)))?;
         let base_address = rm.module.base_address;
 
-        let u_world_offset = rm.read_address::<u32>(base_address + rm.u_world_base + 3)? as usize;
-        let u_world_ptr = base_address + rm.u_world_base + u_world_offset + 7;
-        let world_address = rm.read_address::<u64>(u_world_ptr)? as usize;
+        let u_world_offset =
+            rm.read_pointer::<u32>((base_address + rm.u_world_base + 3) as *mut u32)? as usize;
+        let u_world_ptr = (base_address + rm.u_world_base + u_world_offset + 7) as *mut u64;
+        let world_address = rm.read_pointer::<u64>(u_world_ptr)? as usize;
         let _g_objects_offset =
-            rm.read_address::<u64>(base_address + rm.g_object_base + 2)? as usize;
+            rm.read_pointer::<u64>((base_address + rm.g_object_base + 2) as *mut u64)? as usize;
         let _g_objects_address = base_address + rm.g_object_base + _g_objects_offset + 22;
 
         Ok(Self { rm, world_address })
+    }
+
+    pub fn read_array<T>(&self, address: usize) -> TArray<T> {
+        let buffer = self.rm.read_bytes(address, 12).unwrap();
+
+        let mut base_address_bytes = [0; 8];
+        base_address_bytes.copy_from_slice(&buffer[0..8]);
+        let base_address: u64 = u64::from_le_bytes(base_address_bytes);
+
+        let mut count_bytes = [0; 4];
+        count_bytes.copy_from_slice(&buffer[8..12]);
+        let count: u32 = u32::from_le_bytes(count_bytes);
+
+        TArray {
+            ptr: base_address as *mut T,
+            count: count,
+        }
     }
 
     pub fn read_actors(
         &mut self,
         actor_name_map: &mut HashMap<u32, ActorInfo>,
     ) -> Result<(), MemoryReaderError> {
-        // TArray<ULONG_PTR> levels = Read<TArray<ULONG_PTR>>((LPBYTE)_this + 0x150);
-        let levels_base = self.rm.read_address::<u64>(self.world_address + 0xa0)? as usize;
-        let levels_counts = self.rm.read_address::<u32>(self.world_address + 0xa0 + 8)? as usize;
+        let levels = self.read_array::<*mut u64>((self.world_address + 0x150) as usize);
 
-        for i in 0..levels_counts {
-            let lvl_ptr = self.rm.read_address::<u64>(levels_base + (i * 8))? as usize;
-            let actor_base = self.rm.read_address::<u64>(lvl_ptr + 0xa0)? as usize;
-            let actor_array_size = self.rm.read_address::<u32>(lvl_ptr + 0xa0 + 8)? as usize;
+        for level_ptr in levels.iter() {
+            let level_base_address = self.rm.read_pointer(*level_ptr).unwrap();
+
+            let actors = self.read_array::<*mut c_void>((level_base_address as usize + 0xa0));
+            let first_actor = actors.iter().next();
+            let actor_base: *mut c_void;
+
+            if first_actor.is_none() {
+                println!("This level has no actors");
+                continue;
+            } else {
+                actor_base = *first_actor.unwrap();
+            }
 
             // Credit @mogistink https://www.unknowncheats.me/forum/members/3434160.html
             let level_actors_raw: Vec<u8> = self
                 .rm
-                .read_bytes(actor_base as usize, actor_array_size as usize * 8)?;
+                .read_bytes(actor_base as usize, actors.count as usize * 8)?;
 
-            for j in 0..actor_array_size {
-                let slice = &level_actors_raw[(j * 8)..(j * 8 + 8)];
+            for (index, actor) in actors.iter().enumerate() {
+                let slice = &level_actors_raw[(index * 8)..(index * 8 + 8)];
 
                 let mut raw_actor_address = [0u8; 8];
                 raw_actor_address.copy_from_slice(slice);
                 let actor_address = usize::from_le_bytes(raw_actor_address);
 
-                if let Ok(actor_id) = self.rm.read_address::<u32>(actor_address + 0x18) {
+                if let Ok(actor_id) = self
+                    .rm
+                    .read_pointer::<u32>((actor_address + 0x18) as *mut u32)
+                {
                     let actor_info = if let Some(actor) = actor_name_map.get(&actor_id) {
                         actor
                     } else {

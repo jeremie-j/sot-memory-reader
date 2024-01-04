@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::c_void;
 use std::fs::File;
 use std::io::BufWriter;
 use std::sync::{Arc, Mutex};
@@ -51,6 +52,7 @@ impl MyGame {
 
 impl EventHandler for MyGame {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
+        print!("\x1B[2J\x1B[1;1H");
         let mut reader = self.sot_memory_reader.lock().unwrap();
         reader.read_actors(&mut self.actors_map);
 
@@ -88,14 +90,16 @@ impl EventHandler for MyGame {
             }
         }
 
-        for table_actor in vec![
-            &self.world.gold_hoarders_emissary_table,
-            &self.world.gold_hoarders_emissary_table,
-            &self.world.gold_hoarders_emissary_table,
-            &self.world.gold_hoarders_emissary_table,
-            &self.world.gold_hoarders_emissary_table,
-            &self.world.reaper_emissary_table,
-            &self.world.athena_emissary_table,
+        for (table_actor, emissary_label) in vec![
+            (&self.world.gold_hoarders_emissary_table, "Gold Hoarders : "),
+            (&self.world.merchant_alliance_emissary_table, "Merchants : "),
+            (
+                &self.world.order_of_souls_emissary_table,
+                "Order of souls : ",
+            ),
+            (&self.world.sovereign_emissary_table, "Sovereign : "),
+            (&self.world.reaper_emissary_table, "Reaper : "),
+            (&self.world.athena_emissary_table, "Athena : "),
         ] {
             if table_actor.is_none() {
                 continue;
@@ -105,10 +109,36 @@ impl EventHandler for MyGame {
                 .rm
                 .read_pointer(table_actor_info.base_address as *mut UObject)
                 .unwrap();
+
             let class_ = reader.rm.read_pointer(a.u_class).unwrap();
+
             let class_name = reader.rm.read_gname(class_.name.index).unwrap();
-            println!("{}", class_name);
-            // self.sdk_service.get_offset(attribute_path)
+
+            let emissary_ship_affiliation_tracker_offset = self
+                .sdk_service
+                .get_offset(&format!("{}.EmissaryShipAffiliationTracker", class_name));
+
+            let emissary_ship_affiliation_tracker_class = reader
+                .rm
+                .read_pointer(
+                    (a.u_class as usize + emissary_ship_affiliation_tracker_offset as usize)
+                        as *mut *mut c_void,
+                )
+                .unwrap();
+
+            let emissary_count_offset = self
+                .sdk_service
+                .get_offset("EmissaryShipAffiliationTrackerComponent.EmissaryCount");
+
+            let emmisary_count = reader
+                .rm
+                .read_pointer(
+                    (emissary_ship_affiliation_tracker_class as usize
+                        + emissary_count_offset as usize) as *mut u32,
+                )
+                .unwrap();
+
+            println!("{} {}", emissary_label, emmisary_count);
         }
 
         Ok(())

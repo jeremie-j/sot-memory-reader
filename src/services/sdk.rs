@@ -87,7 +87,7 @@ impl SdkService {
     /// ```
     /// sdk_service.get_offset("Actor.bHidden") // 124
     /// ```
-    pub fn get_offset(&self, attribute_path: &'static str) -> u32 {
+    pub fn get_offset(&self, attribute_path: &str) -> u32 {
         let split = attribute_path.split('.').collect::<Vec<&str>>();
         let (struct_or_class_name, attribute_name) = match split.as_slice() {
             [first, second, ..] => (first, second),

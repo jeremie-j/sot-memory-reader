@@ -261,8 +261,8 @@ impl SoTMemoryReader {
                     .rm
                     .read_pointer::<u32>((actor_base_address as usize + 0x18) as *mut u32)
                 {
-                    let actor_info = if let Some(actor) = actor_name_map.get(&actor_id) {
-                        actor
+                    let _ = if let Some(_) = actor_name_map.get(&actor_id) {
+                        continue;
                     } else {
                         let name = match self.rm.read_gname(actor_id) {
                             Ok(v) => v,

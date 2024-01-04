@@ -56,7 +56,7 @@ impl SdkService {
         }
     }
 
-    pub async fn scan_sdk(&mut self) {
+    pub fn scan_sdk(&mut self) {
         let sdk_path = option_env!("SDK_PATH").unwrap_or("./JSON-SDK");
         let paths = fs::read_dir(sdk_path).unwrap();
         for path in paths {
@@ -68,12 +68,12 @@ impl SdkService {
                 if string_path.ends_with("Classes.json") {
                     match serde_json::from_reader::<_, HashMap<String, SdkClass>>(file) {
                         Ok(v) => self.classes.extend(v),
-                        Err(v) => panic!("{}", v),
+                        Err(v) => panic!("File: {} \n{}", string_path, v),
                     }
                 } else if string_path.ends_with("Structs.json") {
                     match serde_json::from_reader::<_, HashMap<String, SdkStruct>>(file) {
                         Ok(v) => self.structs.extend(v),
-                        Err(v) => panic!("{}", v),
+                        Err(v) => panic!("File: {} \n{}", string_path, v),
                     }
                 } else {
                     println!("Could not scan {}", string_path);
@@ -97,7 +97,10 @@ impl SdkService {
             Some(v) => v,
             None => panic!(
                 "{}",
-                format!("Class or Struct \"{}\" does not exist", attribute_name)
+                format!(
+                    "Class or Struct \"{}\" does not exist",
+                    struct_or_class_name
+                )
             ),
         };
 

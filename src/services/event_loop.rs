@@ -121,7 +121,8 @@ impl EventHandler for MyGame {
             let emissary_ship_affiliation_tracker_class = reader
                 .rm
                 .read_pointer(
-                    (a.u_class as usize + emissary_ship_affiliation_tracker_offset as usize)
+                    (table_actor_info.base_address
+                        + emissary_ship_affiliation_tracker_offset as usize)
                         as *mut *mut c_void,
                 )
                 .unwrap();

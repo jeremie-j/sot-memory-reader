@@ -15,7 +15,7 @@ pub struct UObject {
     pub internal_index: u32,
     pub u_class: *mut UClass,
     pub name: FName,
-    pub outer: *mut UObject,
+    pub outer: *mut Self,
 }
 
 #[repr(C, packed)]

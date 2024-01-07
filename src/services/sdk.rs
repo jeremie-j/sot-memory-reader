@@ -4,6 +4,8 @@ use std::fs;
 use serde::de::{self, Deserializer};
 use serde::Deserialize;
 
+const FILE_WHITELIST: [&str; 1] = ["sdqqs"];
+
 fn deserialize_hex<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: Deserializer<'de>,
@@ -16,6 +18,7 @@ where
 }
 
 #[derive(Deserialize)]
+#[allow(non_snake_case)]
 pub struct SdkAttribute {
     pub Name: String,
     pub Type: String,
@@ -26,6 +29,7 @@ pub struct SdkAttribute {
 }
 
 #[derive(Deserialize)]
+#[allow(non_snake_case)]
 pub struct SdkClass {
     pub Super: String,
     #[serde(deserialize_with = "deserialize_hex")]
@@ -38,6 +42,7 @@ pub struct SdkClass {
 }
 
 #[derive(Deserialize)]
+#[allow(non_snake_case)]
 pub struct SdkStruct {
     #[serde(deserialize_with = "deserialize_hex")]
     pub ClassSize: u32,
@@ -58,27 +63,37 @@ impl SdkService {
 
     pub fn scan_sdk(&mut self) {
         let sdk_path = option_env!("SDK_PATH").unwrap_or("./JSON-SDK");
-        let paths = fs::read_dir(sdk_path).unwrap();
-        for path in paths {
-            if let Ok(path) = path {
-                let path_buff = path.path();
-                let string_path = path_buff.to_str().unwrap();
+        let paths = fs::read_dir(sdk_path)
+            .unwrap()
+            .filter_map(|path| match path {
+                Ok(p) => Some(p),
+                Err(_) => None,
+            });
 
-                let file = fs::File::open(path.path()).unwrap();
-                if string_path.ends_with("Classes.json") {
-                    match serde_json::from_reader::<_, HashMap<String, SdkClass>>(file) {
-                        Ok(v) => self.classes.extend(v),
-                        Err(v) => panic!("File: {} \n{}", string_path, v),
-                    }
-                } else if string_path.ends_with("Structs.json") {
-                    match serde_json::from_reader::<_, HashMap<String, SdkStruct>>(file) {
-                        Ok(v) => self.structs.extend(v),
-                        Err(v) => panic!("File: {} \n{}", string_path, v),
-                    }
-                } else {
-                    println!("Could not scan {}", string_path);
-                    continue;
+        for path in paths {
+            let file_name = path.file_name().into_string().unwrap();
+
+            if !FILE_WHITELIST.contains(&file_name.as_str()) {
+                continue;
+            }
+
+            let path_buff = path.path();
+            let string_path = path_buff.to_str().unwrap();
+
+            let file = fs::File::open(path.path()).unwrap();
+            if string_path.ends_with("Classes.json") {
+                match serde_json::from_reader::<_, HashMap<String, SdkClass>>(file) {
+                    Ok(v) => self.classes.extend(v),
+                    Err(v) => panic!("File: {} \n{}", string_path, v),
                 }
+            } else if string_path.ends_with("Structs.json") {
+                match serde_json::from_reader::<_, HashMap<String, SdkStruct>>(file) {
+                    Ok(v) => self.structs.extend(v),
+                    Err(v) => panic!("File: {} \n{}", string_path, v),
+                }
+            } else {
+                println!("Could not scan {}", string_path);
+                continue;
             }
         }
     }

@@ -3,7 +3,7 @@ use std::ffi::c_void;
 use std::fmt::Debug;
 use std::mem::size_of;
 use std::str::from_utf8;
-use std::{any::type_name, ptr};
+use std::{any::type_name};
 
 use toy_arms::external::module::Module;
 use toy_arms::external::process::Process;
@@ -99,7 +99,7 @@ impl MemoryReader {
     }
 
     pub fn read_string(&self, address: usize, size: usize) -> Result<String, MemoryReaderError> {
-        let buffer = self.read_bytes(address, size).map_err(|err| {
+        let buffer = self.read_bytes(address, size).map_err(|_err| {
             MemoryReaderError::MemoryReadingError(format!(
                 "Could not read string at {:#X}",
                 address
@@ -131,7 +131,7 @@ impl MemoryReader {
             size,
             &mut target_buffer as *mut Vec<u8>,
         )
-        .map_err(|err| {
+        .map_err(|_err| {
             MemoryReaderError::MemoryReadingError(format!(
                 "Could not read string at {:#X}",
                 address
@@ -166,14 +166,14 @@ impl MemoryReader {
     pub fn read_pointer<T>(&self, address: *mut T) -> Result<T, MemoryReaderError> {
         // TODO: rename
         let mut buffer: T = unsafe { std::mem::zeroed() };
-        let mut bytes_read = 0;
+        let _bytes_read = 0;
         read::<T>(
             &self.process.handle,
             address as usize,
             size_of::<T>(),
             &mut buffer as *mut T as _,
         )
-        .map_err(|err| {
+        .map_err(|_err| {
             MemoryReaderError::MemoryReadingError(format!(
                 "Could not read {} type at {:#X}",
                 type_name::<T>(),

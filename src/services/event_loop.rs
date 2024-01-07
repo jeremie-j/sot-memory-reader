@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::fs::File;
-use std::io::BufWriter;
+
 use std::sync::{Arc, Mutex};
 use std::vec;
 
 use ggez::event::EventHandler;
 use ggez::graphics::{self, Color};
 use ggez::{Context, GameResult};
-use std::io::prelude::*;
 
 use crate::core::reader::{ActorInfo, SoTMemoryReader};
-use crate::entities::world::{self, World};
+use crate::entities::world::World;
 use crate::structs::unreal::UObject;
 
 use super::sdk::SdkService;
@@ -54,19 +52,9 @@ impl EventHandler for MyGame {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         print!("\x1B[2J\x1B[1;1H");
         let mut reader = self.sot_memory_reader.lock().unwrap();
-        reader.read_actors(&mut self.actors_map);
+        let _ = reader.read_actors(&mut self.actors_map);
 
-        // for (actor_id, actor_info) in &self.actors_map {
-        //     write!(
-        //         writer,
-        //         "{}, {}, {}\n",
-        //         actor_info.id, actor_info.raw_name, actor_info.base_address
-        //     )
-        //     .expect("Unable to write data");
-        // }
-
-        for (actor_id, actor_info) in &self.actors_map {
-            actor_info.raw_name.clone();
+        for (_actor_id, actor_info) in &self.actors_map {
             match actor_info.raw_name.as_str() {
                 "BP_EmissaryTable_GoldHoarders_01" => {
                     self.world.gold_hoarders_emissary_table = Some(actor_info.clone())
@@ -146,7 +134,7 @@ impl EventHandler for MyGame {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        let mut canvas = graphics::Canvas::from_frame(ctx, Color::WHITE);
+        let canvas = graphics::Canvas::from_frame(ctx, Color::WHITE);
         // Draw code here...
         canvas.finish(ctx)
     }

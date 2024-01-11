@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::sync::OnceLock;
 
 use serde::de::{self, Deserializer};
 use serde::Deserialize;
@@ -139,7 +140,7 @@ impl SdkService {
         }
     }
 
-    pub fn get_size(&self, attribute_path: &'static str) -> u32 {
+    pub fn get_attribute_size(&self, attribute_path: &'static str) -> u32 {
         let split = attribute_path.split('.').collect::<Vec<&str>>();
         let (struct_or_class_name, attribute_name) = match split.as_slice() {
             [first, second, ..] => (first, second),
@@ -165,6 +166,22 @@ impl SdkService {
         }
     }
 
+    pub fn get_class_or_struct_size(&self, struct_or_class_name: &str) -> u32 {
+        if let Some(class) = self.classes.get(struct_or_class_name) {
+            return class.ClassSize;
+        } else if let Some(struct_) = self.structs.get(struct_or_class_name) {
+            return struct_.ClassSize;
+        } else {
+            panic!(
+                "{}",
+                format!(
+                    "Class or Struct \"{}\" does not exist",
+                    struct_or_class_name
+                )
+            );
+        }
+    }
+
     fn get_attributes(&self, struct_or_class_name: &str) -> Option<&Vec<SdkAttribute>> {
         if let Some(class) = self.classes.get(struct_or_class_name) {
             Some(&class.Attributes)
@@ -174,4 +191,13 @@ impl SdkService {
             None
         }
     }
+}
+
+pub fn sdk_service() -> &'static SdkService {
+    static SDK_SERVICE: OnceLock<SdkService> = OnceLock::new();
+    SDK_SERVICE.get_or_init(|| {
+        let mut sdk_service = SdkService::new();
+        sdk_service.scan_sdk();
+        sdk_service
+    })
 }

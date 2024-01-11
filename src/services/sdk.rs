@@ -4,7 +4,16 @@ use std::fs;
 use serde::de::{self, Deserializer};
 use serde::Deserialize;
 
-const FILE_WHITELIST: [&str; 1] = ["sdqqs"];
+const FILE_WHITELIST: [&str; 8] = [
+    "BP_EmissaryTable_01_Classes.json",
+    "BP_EmissaryTable_GoldHoarder_01_Classes.json",
+    "BP_EmissaryTable_MerchantAlliance_01_Classes.json",
+    "BP_EmissaryTable_OrderOfSouls_01_Classes.json",
+    "BP_EmissaryTable_Sov_01_a_Classes.json",
+    "BP_FactionEmissaryTable_Athena_Classes.json",
+    "BP_FactionEmissaryTable_Reapers_Classes.json",
+    "EmissaryLevel_Classes.json",
+];
 
 fn deserialize_hex<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
@@ -72,7 +81,6 @@ impl SdkService {
 
         for path in paths {
             let file_name = path.file_name().into_string().unwrap();
-
             if !FILE_WHITELIST.contains(&file_name.as_str()) {
                 continue;
             }

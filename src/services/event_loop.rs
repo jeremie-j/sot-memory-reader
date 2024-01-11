@@ -99,9 +99,9 @@ impl EventHandler for MyGame {
                 continue;
             }
             let table_actor_info = table_actor.clone().unwrap();
-            let u_object = read_pointer(table_actor_info.base_address as *mut UObject);
+            let u_object = read_pointer(table_actor_info.base_address as *mut UObject).unwrap();
 
-            let class_ = read_pointer(u_object.u_class);
+            let class_ = read_pointer(u_object.u_class).unwrap();
             let class_name = reader.rm.read_gname(class_.name.index).unwrap();
 
             let emissary_ship_affiliation_tracker_offset = self
@@ -118,7 +118,8 @@ impl EventHandler for MyGame {
                     emissary_ship_affiliation_tracker_offset,
                     emissary_count_offset,
                 ],
-            );
+            )
+            .unwrap();
 
             println!("{} {}", emissary_label, emmisary_count);
         }

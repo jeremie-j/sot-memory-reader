@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
 use std::{any::type_name, ops::Add};
 
+use toy_arms::external::error::TAExternalError;
 use toy_arms::external::module::Module;
 use toy_arms::external::process::Process;
 use toy_arms::external::read;
@@ -37,7 +38,7 @@ fn process() -> &'static MyProcess {
     })
 }
 
-pub fn read_pointer<T>(address: *mut T) -> T {
+pub fn read_pointer<T>(address: *mut T) -> Result<T, TAExternalError> {
     let mut target_buffer: T = unsafe { std::mem::zeroed() };
     let _bytes_read = 0;
     read::<T>(
@@ -45,9 +46,8 @@ pub fn read_pointer<T>(address: *mut T) -> T {
         address as usize,
         size_of::<T>(),
         &mut target_buffer as *mut T,
-    )
-    .unwrap();
-    target_buffer
+    )?;
+    Ok(target_buffer)
 }
 
 pub fn read_bytes(address: usize, size: usize) -> Vec<u8> {
@@ -79,7 +79,7 @@ pub fn read_array<T>(address: usize) -> TArray<T> {
     TArray::new(raw_bytes, count)
 }
 
-pub fn find_dma_addy<T>(address: usize, mut offsets: Vec<u32>) -> T {
+pub fn find_dma_addy<T>(address: usize, mut offsets: Vec<u32>) -> Result<T, TAExternalError> {
     if offsets.is_empty() {
         panic!("Offsets vector is empty. Expected at least one element.");
     }
@@ -88,7 +88,7 @@ pub fn find_dma_addy<T>(address: usize, mut offsets: Vec<u32>) -> T {
 
     for offset in offsets {
         current_address = current_address + offset as usize;
-        current_address = read_pointer(current_address as *mut _);
+        current_address = read_pointer(current_address as *mut _)?;
     }
     read_pointer::<T>((current_address + last_offset as usize) as *mut T)
 }
@@ -129,10 +129,11 @@ impl MemoryReader {
             .find_pattern(GNAMEPATTERN)
             .expect("Could not find g_name_base offsets");
 
-        let g_name_offset = read_pointer((module.base_address + g_name_base + 3) as *mut u32);
+        let g_name_offset =
+            read_pointer((module.base_address + g_name_base + 3) as *mut u32).unwrap();
         let g_name_ptr = module.base_address + g_name_base + (g_name_offset as usize + 7);
 
-        let g_name_start_address = read_pointer(g_name_ptr as *mut u64);
+        let g_name_start_address = read_pointer(g_name_ptr as *mut u64).unwrap();
 
         Self {
             u_world_base,
@@ -199,8 +200,9 @@ impl MemoryReader {
     pub fn read_gname(&self, actor_id: u32) -> Result<String, MemoryReaderError> {
         let actor_id = u64::from(actor_id);
         let name_ptr =
-            read_pointer((self.g_name_start_address + actor_id / 0x4000 * 0x8) as *mut u64);
-        let name = read_pointer((name_ptr + 0x8 * (actor_id % 0x4000)) as *mut u64);
+            read_pointer((self.g_name_start_address + actor_id / 0x4000 * 0x8) as *mut u64)
+                .unwrap();
+        let name = read_pointer((name_ptr + 0x8 * (actor_id % 0x4000)) as *mut u64).unwrap();
         Ok(self.read_string((name + 0x10) as usize, 64))?
     }
 }
@@ -218,11 +220,12 @@ impl SoTMemoryReader {
         let base_address = module.base_address;
 
         let u_world_offset =
-            read_pointer::<u32>((base_address + rm.u_world_base + 3) as *mut u32) as usize;
+            read_pointer::<u32>((base_address + rm.u_world_base + 3) as *mut u32).unwrap() as usize;
         let u_world_ptr = (base_address + rm.u_world_base + u_world_offset + 7) as *mut u64;
-        let world_address = read_pointer::<u64>(u_world_ptr) as usize;
+        let world_address = read_pointer::<u64>(u_world_ptr).unwrap() as usize;
         let _g_objects_offset =
-            read_pointer::<u64>((base_address + rm.g_object_base + 2) as *mut u64) as usize;
+            read_pointer::<u64>((base_address + rm.g_object_base + 2) as *mut u64).unwrap()
+                as usize;
         let _g_objects_address = base_address + rm.g_object_base + _g_objects_offset + 22;
 
         Ok(Self { rm, world_address })
@@ -245,6 +248,10 @@ impl SoTMemoryReader {
 
             for actor_base_address in actors_pointer_table.iter() {
                 let actor_id = read_pointer((actor_base_address as usize + 0x18) as *mut u32);
+                if actor_id.is_err() {
+                    continue;
+                }
+                let actor_id = actor_id.unwrap();
                 let _ = if let Some(_) = actor_name_map.get(&actor_id) {
                     continue;
                 } else {

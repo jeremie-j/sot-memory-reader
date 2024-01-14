@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ffi::c_void};
 
 use crate::{
-    core::reader::{read_array, read_pointer, ActorInfo},
+    core::reader::{read_array, read_array_sized, read_pointer, ActorInfo},
     services::sdk::sdk_service,
 };
 
@@ -122,27 +122,21 @@ impl CrewService {
     }
 
     fn get_crews(&self) -> HashMap<Guid, u32> {
-        let crews_pointer_table = read_pointer(
-            (&self.actor.base_address + sdk_service().get_offset("CrewService.Crews") as usize)
-                as *mut c_void,
-        )
-        .unwrap();
-        let crew_array = read_array::<c_void>(crews_pointer_table as usize);
+        let crew_array = read_array_sized(
+            &self.actor.base_address + sdk_service().get_offset("CrewService.Crews") as usize,
+            sdk_service().get_class_or_struct_size("Crew") as usize,
+        );
 
         let mut crews_hasmap: HashMap<Guid, u32> = HashMap::new();
 
         let crew_guid_offset = sdk_service().get_offset("Crew.CrewId");
         let player_array_offset = sdk_service().get_offset("Crew.Players");
-
         for crew_actor_pointer in crew_array.iter() {
-            let crew_class_size = sdk_service().get_class_or_struct_size("Crew") as usize;
-            let crew_pointer = crew_actor_pointer as usize + crew_class_size;
-
+            let crew_base = crew_actor_pointer.item_pointer as usize;
             let crew_guid =
-                read_pointer((crew_pointer + crew_guid_offset as usize) as *mut Guid).unwrap();
+                read_pointer((crew_base + crew_guid_offset as usize) as *mut Guid).unwrap();
 
-            let crew_player_array =
-                read_array::<c_void>(crew_pointer + player_array_offset as usize);
+            let crew_player_array = read_array::<c_void>(crew_base + player_array_offset as usize);
             crews_hasmap.insert(crew_guid, crew_player_array.count);
         }
         crews_hasmap
@@ -157,9 +151,10 @@ impl CrewService {
     }
 
     pub fn update(&mut self) {
-        if !self.is_valid() {
-            return;
-        }
+        // if !self.is_valid() {
+        //     println!("CrewService is not valid");
+        //     return;
+        // }
         self.crews = self.get_crews();
         self.total_players = self.get_total_players()
     }

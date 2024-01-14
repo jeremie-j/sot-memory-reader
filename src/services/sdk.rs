@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use serde::de::{self, Deserializer};
 use serde::Deserialize;
 
-const FILE_WHITELIST: [&str; 8] = [
+const FILE_WHITELIST: [&str; 10] = [
     "BP_EmissaryTable_01_Classes.json",
     "BP_EmissaryTable_GoldHoarder_01_Classes.json",
     "BP_EmissaryTable_MerchantAlliance_01_Classes.json",
@@ -14,6 +14,8 @@ const FILE_WHITELIST: [&str; 8] = [
     "BP_FactionEmissaryTable_Athena_Classes.json",
     "BP_FactionEmissaryTable_Reapers_Classes.json",
     "EmissaryLevel_Classes.json",
+    "Athena_Structs.json",
+    "Athena_Classes.json",
 ];
 
 fn deserialize_hex<'de, D>(deserializer: D) -> Result<u32, D::Error>

@@ -4,17 +4,14 @@ use std::fmt::Debug;
 use std::mem::size_of;
 use std::str::from_utf8;
 use std::sync::OnceLock;
-use std::sync::{Arc, Mutex};
-use std::{any::type_name, ops::Add};
 
 use toy_arms::external::error::TAExternalError;
-use toy_arms::external::module::Module;
 use toy_arms::external::process::Process;
 use toy_arms::external::read;
 
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 
-use crate::structs::tarray::TArray;
+use crate::structs::tarray::{TArray, TArrayStruct};
 
 const UWORLDPATTERN: &'static str = "48 8B 05 ? ? ? ? 48 8B 88 ? ? ? ? 48 85 C9 74 06 48 8B 49 70";
 const GOBJECTPATTERN: &'static str = "89 0D ? ? ? ? 48 8B DF 48 89 5C 24";
@@ -77,6 +74,21 @@ pub fn read_array<T>(address: usize) -> TArray<T> {
     let raw_bytes = read_bytes(base_address as usize, item_size * count as usize);
 
     TArray::new(raw_bytes, count)
+}
+
+pub fn read_array_sized(address: usize, item_size: usize) -> TArrayStruct {
+    let buffer = read_bytes(address, 12);
+
+    let mut base_address_bytes = [0; 8];
+    base_address_bytes.copy_from_slice(&buffer[0..8]);
+    let base_address: u64 = u64::from_le_bytes(base_address_bytes);
+
+    let mut count_bytes = [0; 4];
+    count_bytes.copy_from_slice(&buffer[8..12]);
+    let count: u32 = u32::from_le_bytes(count_bytes);
+
+    let array = TArrayStruct::new(base_address as usize, item_size, count);
+    array
 }
 
 pub fn find_dma_addy<T>(address: usize, mut offsets: Vec<u32>) -> Result<T, TAExternalError> {
@@ -216,7 +228,7 @@ impl SoTMemoryReader {
     pub fn new(process_name: &'static str) -> Result<Self, MemoryReaderError> {
         let rm = MemoryReader::new(process_name);
         let process_ = Process::from_process_name("SoTGame.exe").unwrap();
-        let mut module = process_.get_module_info("SoTGame.exe").unwrap();
+        let module = process_.get_module_info("SoTGame.exe").unwrap();
         let base_address = module.base_address;
 
         let u_world_offset =

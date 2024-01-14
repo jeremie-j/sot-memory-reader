@@ -56,7 +56,6 @@ impl EventHandler for MyGame {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        print!("\x1B[2J\x1B[1;1H");
         let canvas = graphics::Canvas::from_frame(ctx, Color::WHITE);
         if *&self.world.is_none() {
             println!("player is not ingame");
@@ -64,6 +63,7 @@ impl EventHandler for MyGame {
         let world = self.world.as_mut().unwrap();
         let crew_service = world.crew_service.as_mut().unwrap();
         crew_service.update();
+        print!("\x1B[2J\x1B[1;1H");
         crew_service.print_crews();
 
         // Draw code here...
